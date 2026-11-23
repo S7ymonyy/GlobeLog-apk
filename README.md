@@ -11,8 +11,4 @@ aplikacja na Androida  Wymaga Androida 6.0 lub nowszego.
 - Interfejs ma 12 języków. Prognoza i wyszukiwanie korzystają z [Open-Meteo](https://open-meteo.com/). Ustalenie nazwy miejscowości wykorzystuje Android Geocoder i OpenStreetMap.
 
 
-## Sprawdzanie aktualizacji
-
-Ustaw `globelog.github.repository=OWNER/REPO` w `gradle.properties` przed kompilacją. Przycisk w ustawieniach korzysta z najnowszej publicznej wersji w GitHub Releases. Używaj tagów w formacie `v1.0`, `v1.1` lub `v1.1.2`.
-
 Inspiracja aplikacją GetDaTrip.
