@@ -1,12 +1,8 @@
 # GlobeLog 1.0
 
-Natywna aplikacja na Androida w Kotlinie i Jetpack Compose. Wymaga Androida 6.0 lub nowszego.
+aplikacja na Androida  Wymaga Androida 6.0 lub nowszego.
 
 ## Budowanie w Android Studio
-
-1. Rozpakuj ZIP i otwórz folder z plikiem `settings.gradle.kts` w Android Studio.
-2. Wybierz Android SDK 36 i JDK 17 lub nowszy. Po synchronizacji Gradle kliknij **Run**.
-3. Aby zbudować instalator, uruchom `./gradlew assembleDebug`. APK trafi do `app/build/outputs/apk/debug/`.
 
 ## Miejsca, mapa i sklep
 
