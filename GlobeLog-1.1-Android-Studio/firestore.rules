@@ -1,0 +1,206 @@
+rules_version = '2';
+
+// Accepted friendship documents can include one shared pinned message ID and one optional deletion
+// block per participant. The participants can change only their own block. Every message has an
+// immutable sender UID and creation timestamp and an optional edit timestamp after a sender edit.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function validCode(code) {
+      return code is string && code.matches('^[A-HJ-NP-Z2-9]{10}$');
+    }
+
+    function validUid(uid) {
+      return uid is string && uid.matches('^[A-Za-z0-9]{1,128}$');
+    }
+
+    function profilePath(uid) {
+      return /databases/$(database)/documents/profiles/$(uid);
+    }
+
+    function codePath(code) {
+      return /databases/$(database)/documents/codes/$(code);
+    }
+
+    function friendshipPath(id) {
+      return /databases/$(database)/documents/friendships/$(id);
+    }
+
+    function pairId(first, second) {
+      return first < second ? first + '_' + second : second + '_' + first;
+    }
+
+    function areFriends(first, second) {
+      let pair = friendshipPath(pairId(first, second));
+      return exists(pair) && get(pair).data.status == 'accepted';
+    }
+
+    function validScore(score) {
+      return score is int && score >= 0 && score <= 1000000000;
+    }
+
+    // profiles/{uid}: display name, immutable invite code, legacy score, optional 1.1 score and photo.
+    // Missing scoreV11 is zero. Each score only increases within its own leaderboard generation.
+    // Only the account owner and accepted friends can read the profile.
+    function validProfile(data) {
+      return data.keys().hasAll(['displayName', 'friendCode', 'score'])
+        && data.keys().hasOnly(['displayName', 'friendCode', 'score', 'scoreV11', 'photo'])
+        && data.displayName is string
+        && data.displayName.size() > 0 && data.displayName.size() <= 80
+        && validCode(data.friendCode)
+        && validScore(data.score)
+        && (!('scoreV11' in data) || validScore(data.scoreV11))
+        && (!('photo' in data) || (data.photo is bytes && data.photo.size() > 0 && data.photo.size() <= 24576));
+    }
+
+    function validInvitation(data, id) {
+      return data.keys().hasOnly([
+          'members', 'senderUid', 'recipientUid', 'senderName', 'recipientCode', 'status', 'updatedAt'
+        ])
+        && isSelf(data.senderUid)
+        && validUid(data.senderUid) && validUid(data.recipientUid)
+        && data.senderUid != data.recipientUid
+        && id == pairId(data.senderUid, data.recipientUid)
+        && data.members is list && data.members.size() == 2
+        && data.members.hasAll([data.senderUid, data.recipientUid])
+        && validCode(data.recipientCode)
+        && get(codePath(data.recipientCode)).data.uid == data.recipientUid
+        && data.senderName == get(profilePath(data.senderUid)).data.displayName
+        && data.status == 'pending'
+        && data.updatedAt == request.time;
+    }
+
+    function isAcceptedParticipant(id) {
+      let relationship = get(friendshipPath(id)).data;
+      return signedIn() && relationship.status == 'accepted' && request.auth.uid in relationship.members;
+    }
+
+    function messagePath(chatId, messageId) {
+      return /databases/$(database)/documents/friendships/$(chatId)/messages/$(messageId);
+    }
+
+    function validChatSettings(chatId) {
+      let data = request.resource.data;
+      let changed = data.diff(resource.data).affectedKeys();
+      return signedIn()
+        && request.auth.uid in resource.data.members
+        && resource.data.status == 'accepted'
+        && data.keys().hasAll([
+          'members', 'senderUid', 'recipientUid', 'senderName', 'recipientCode', 'status', 'updatedAt'
+        ])
+        && changed.hasOnly(['senderBlocksDeletion', 'recipientBlocksDeletion', 'pinnedMessageId', 'updatedAt'])
+        && data.updatedAt == request.time
+        && (!changed.hasAny(['senderBlocksDeletion']) || isSelf(resource.data.senderUid))
+        && (!changed.hasAny(['recipientBlocksDeletion']) || isSelf(resource.data.recipientUid))
+        && (!('senderBlocksDeletion' in data) || data.senderBlocksDeletion is bool)
+        && (!('recipientBlocksDeletion' in data) || data.recipientBlocksDeletion is bool)
+        && (!('pinnedMessageId' in data) || (
+          data.pinnedMessageId is string
+          && data.pinnedMessageId.matches('^[A-Za-z0-9_-]{1,128}$')
+          && existsAfter(messagePath(chatId, data.pinnedMessageId))
+        ));
+    }
+
+    function validMessage(data) {
+      return data.keys().hasAll(['senderUid', 'text', 'createdAt'])
+        && data.keys().hasOnly(['senderUid', 'text', 'createdAt', 'editedAt'])
+        && validUid(data.senderUid)
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 1200
+        && data.createdAt is timestamp
+        && (!('editedAt' in data) || data.editedAt == request.time);
+    }
+
+    function canDeleteMessage(chatId, messageId) {
+      let chat = getAfter(friendshipPath(chatId)).data;
+      return signedIn() && request.auth.uid in chat.members && chat.status == 'accepted'
+        && isSelf(resource.data.senderUid)
+        && !chat.get('senderBlocksDeletion', false)
+        && !chat.get('recipientBlocksDeletion', false)
+        && chat.get('pinnedMessageId', '') != messageId;
+    }
+
+    match /profiles/{uid} {
+      allow get: if signedIn() && (isSelf(uid) || areFriends(request.auth.uid, uid));
+      allow create: if isSelf(uid) && validUid(uid) && validProfile(request.resource.data)
+        && getAfter(codePath(request.resource.data.friendCode)).data.uid == uid;
+      allow update: if isSelf(uid)
+        && validProfile(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['score', 'scoreV11', 'displayName', 'photo'])
+        && request.resource.data.score >= resource.data.score
+        && (!('scoreV11' in resource.data) || (
+          'scoreV11' in request.resource.data && request.resource.data.scoreV11 >= resource.data.scoreV11
+        ));
+    }
+
+    match /codes/{code} {
+      allow get: if signedIn() && validCode(code);
+      allow create: if signedIn() && validCode(code)
+        && request.resource.data.keys().hasOnly(['uid'])
+        && isSelf(request.resource.data.uid)
+        && getAfter(profilePath(request.auth.uid)).data.friendCode == code;
+    }
+
+    // friendLocations/{uid}: one current point per user. Integer coordinates are in thousandths
+    // of a degree. The server timestamp makes expired points unavailable to friends.
+    match /friendLocations/{uid} {
+      function validPoint(data) {
+        return data.keys().hasAll(['latitudeE3', 'longitudeE3', 'updatedAt'])
+          && data.keys().hasOnly(['latitudeE3', 'longitudeE3', 'updatedAt'])
+          && data.latitudeE3 is int && data.latitudeE3 >= -90000 && data.latitudeE3 <= 90000
+          && data.longitudeE3 is int && data.longitudeE3 >= -180000 && data.longitudeE3 <= 180000
+          && data.updatedAt is timestamp && data.updatedAt == request.time;
+      }
+
+      function canPublishPoint() {
+        return isSelf(uid) && validUid(uid) && exists(profilePath(uid)) && validPoint(request.resource.data);
+      }
+
+      allow get: if signedIn() && areFriends(request.auth.uid, uid)
+        && (resource == null || resource.data.updatedAt > request.time - duration.value(15, 'm'));
+      allow create: if canPublishPoint();
+      allow update: if canPublishPoint()
+        && request.time >= resource.data.updatedAt + duration.value(60, 's');
+      allow delete: if isSelf(uid);
+    }
+
+    match /friendships/{id} {
+      allow get: if signedIn() && request.auth.uid in resource.data.members;
+      allow list: if signedIn() && request.auth.uid in resource.data.members
+        && request.query.limit != null && request.query.limit <= 100;
+      allow create: if validInvitation(request.resource.data, id);
+      allow update: if (resource.data.status == 'declined' && validInvitation(request.resource.data, id))
+        || (isSelf(resource.data.recipientUid)
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status in ['accepted', 'declined']
+          && request.resource.data.updatedAt == request.time)
+        || validChatSettings(id);
+
+      match /messages/{messageId} {
+        allow get: if isAcceptedParticipant(id);
+        allow list: if isAcceptedParticipant(id)
+          && request.query.limit != null && request.query.limit <= 100;
+        allow create: if isAcceptedParticipant(id)
+          && validMessage(request.resource.data)
+          && !('editedAt' in request.resource.data)
+          && isSelf(request.resource.data.senderUid)
+          && request.resource.data.createdAt == request.time;
+        allow update: if isAcceptedParticipant(id)
+          && isSelf(resource.data.senderUid)
+          && validMessage(request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+          && request.resource.data.text != resource.data.text
+          && request.resource.data.editedAt == request.time;
+        allow delete: if canDeleteMessage(id, messageId);
+      }
+    }
+  }
+}

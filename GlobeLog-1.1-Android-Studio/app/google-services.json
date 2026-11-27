@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "235011906285",
+    "project_id": "globelog-e0c82",
+    "storage_bucket": "globelog-e0c82.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:235011906285:android:aa36624aa196eab781cae4",
+        "android_client_info": {
+          "package_name": "pl.getdatrip"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "235011906285-27ogg337t9rkt4bh86ronugm0dhmqc7a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "pl.getdatrip",
+            "certificate_hash": "e1d9944ea9dfbd8f3530324cea7fb510c3fba49b"
+          }
+        },
+        {
+          "client_id": "235011906285-vickhde1lip9mtfjlceisd5qvpt3fen8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdgT27L7ES1bQOQQvpovkiD4cnydxLTU0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "235011906285-vickhde1lip9mtfjlceisd5qvpt3fen8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
